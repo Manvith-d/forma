@@ -44,7 +44,7 @@ The agents never read the web. They read a warehouse built by `forma pipeline`, 
 
 | Layer | What happens |
 |---|---|
-| **Bronze** | Downloads every source in [`sources.yaml`](sources.yaml) with retries, records URL, license, SHA-256 and time. A license allowlist (public domain, CC BY, CC0, Unlicense, API terms) rejects anything else; Europe PMC's own license field must agree with the manifest |
+| **Bronze** | Downloads every source in [`sources.yaml`](sources.yaml) with retries, records URL, license, SHA-256 and time. If a site refuses the machine (NIH's fact-sheet site blocks some cloud runners), the page comes from the Internet Archive's unmodified copy, and the provenance row says so. A license allowlist (public domain, CC BY, CC0, Unlicense, API terms) rejects anything else; Europe PMC's own license field must agree with the manifest |
 | **Silver** | Parses PDFs page by page, JATS XML papers by section and HTML fact sheets, skipping references and front matter. Loads USDA FoodData Central CSVs with DuckDB, the exercise JSON, openFDA label sections and recipes |
 | **Gold** | Foods with 16 nutrients, portion weights and safety tags (allergens, grapefruit, tyramine, calcium-rich and so on); exercises tagged by movement pattern and risk; 5,959 passages embedded with `bge-small-en-v1.5`; the rulebook with its evidence; recipes resolved to USDA foods and grams |
 | **Ops** | Each run's steps and timings, the 13 quality checks, and an embedding cache so rebuilds take seconds |
@@ -96,7 +96,7 @@ With the local model on (`forma eval --llm ollama:qwen3:8b`, on an Apple-silicon
 
 The eval found real bugs before they shipped: "4 days a week" was read as a one-week timeline, which failed validation and blocked intake; "get stronger" and "stay fit" goals were missed; the planner ignored a light-only limit for someone awaiting clearance, and put full-body sessions on back-to-back days; the per-meal medication timing flagged 10 g of garlic as calcium-rich; and once a sodium check was added (after the dashboard showed 2,506 mg for someone with high blood pressure), it caught the protein top-up mistaking soy sauce for a lean protein and serving 115 g of it, 7,900 mg of sodium in one day.
 
-26 pytest tests cover the parsers, food tags, energy targets, the planner, the rulebook, a full conversation through the graph, the chef and the WebSocket API.
+27 pytest tests cover the parsers, food tags, energy targets, the planner, the rulebook, the downloader's fallback, a full conversation through the graph, the chef and the WebSocket API.
 
 ## Run it
 

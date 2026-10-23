@@ -27,7 +27,7 @@ class LicenseError(RuntimeError):
     pass
 
 
-def _get(client: httpx.Client, url: str, **params) -> httpx.Response:
+def _get(client: httpx.Client, url: str, /, **params) -> httpx.Response:  # params may include "url"
     for attempt in range(4):  # gov servers drop connections, rate-limit (429) or bot-block cloud IPs (403, retried once)
         try:
             r = client.get(url, params=params or None)
@@ -49,7 +49,12 @@ def _page(client: httpx.Client, url: str) -> httpx.Response:
     except httpx.HTTPStatusError as e:
         if e.response.status_code != 403:
             raise
-        return _get(client, f"{WAYBACK}/{datetime.now(UTC).year}id_/{url}")
+        # The newest capture that succeeded: the archive's own crawler is sometimes refused too, and replays that 403
+        rows = _get(client, f"{WAYBACK.removesuffix('/web')}/cdx/search/cdx", url=url, filter="statuscode:200",
+                    output="json", limit="-1").json()
+        if len(rows) < 2:
+            raise
+        return _get(client, f"{WAYBACK}/{rows[1][1]}id_/{rows[1][2]}")
 
 
 def _save(path: Path, content: bytes) -> dict:

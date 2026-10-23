@@ -118,7 +118,15 @@ def test_a_refused_page_falls_back_to_the_archive(monkeypatch):
     from forma.pipeline import bronze
 
     monkeypatch.setattr(bronze.time, "sleep", lambda s: None)
-    refuse = httpx.MockTransport(lambda r: httpx.Response(403) if r.url.host == "ods.od.nih.gov" else httpx.Response(200, content=b"ok"))
-    with httpx.Client(transport=refuse) as client:
-        r = bronze._page(client, "https://ods.od.nih.gov/factsheets/VitaminK-HealthProfessional/")
-    assert r.content == b"ok" and str(r.url).startswith(bronze.WAYBACK) and "id_/https://ods.od.nih.gov" in str(r.url)
+    page = "https://ods.od.nih.gov/factsheets/VitaminK-HealthProfessional/"
+
+    def web(r):
+        if r.url.host == "ods.od.nih.gov" or "/20991231id_/" in r.url.path:  # refused, and the newest capture is a 403
+            return httpx.Response(403)
+        if r.url.path == "/cdx/search/cdx":  # the index lists the newest capture that returned 200
+            return httpx.Response(200, json=[["urlkey", "timestamp", "original"], ["x", "20261015065630", page]])
+        return httpx.Response(200, content=b"ok")
+
+    with httpx.Client(transport=httpx.MockTransport(web)) as client:
+        r = bronze._page(client, page)
+    assert r.content == b"ok" and str(r.url) == f"{bronze.WAYBACK}/20261015065630id_/{page}"
