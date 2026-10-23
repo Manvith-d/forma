@@ -1,0 +1,23 @@
+# docker compose up --build                     the app, talking to Ollama on your machine (best on a Mac: Metal GPU)
+# docker compose --profile ollama up --build    the app plus Ollama in a container (Linux; CPU unless you add a GPU)
+#   then: docker compose exec ollama ollama pull qwen3:8b, and open http://localhost:8000
+services:
+  forma:
+    build: .
+    image: forma:local
+    ports: ["8000:8000"]
+    environment:
+      FORMA_LLM: ${FORMA_LLM:-ollama:qwen3:8b}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: [sessions:/app/runtime]
+
+  ollama:
+    image: ollama/ollama:0.40.7
+    profiles: [ollama]
+    ports: ["11434:11434"]
+    volumes: [models:/root/.ollama]
+
+volumes:
+  sessions:
+  models:

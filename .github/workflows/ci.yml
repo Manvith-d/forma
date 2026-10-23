@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FORMA_LLM: none  # rules-only, so every run is deterministic; the LLM path is measured locally
+  FORMA_MODEL_CACHE: ${{ github.workspace }}/.models
+
+jobs:
+  test:
+    name: pipeline, tests and eval gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - uses: actions/cache@v4
+        with: { path: .models, key: models-bge-small-en-v1.5 }
+      - uses: actions/cache@v4  # raw downloads and the embedding cache; the pipeline still rebuilds and re-checks every layer
+        with:
+          path: data
+          key: data-${{ hashFiles('sources.yaml', 'knowledge/rules.yaml', 'src/forma/pipeline/**') }}
+          restore-keys: data-
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - name: Data pipeline (bronze -> silver -> gold) with 13 quality checks
+        run: forma pipeline
+      - run: pytest -q
+      - name: Eval gates on 29 personas (safety 100%, quality 90%+) and retrieval
+        run: forma eval --json eval.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: eval-report, path: eval.json }
+
+  docker:
+    name: image builds and serves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t forma:ci .
+      - run: |
+          docker run -d --name forma -p 8000:8000 -e FORMA_LLM=none forma:ci
+          for i in $(seq 1 60); do curl -fs localhost:8000/api/health && break; sleep 2; done
+          curl -fs localhost:8000/api/health | python3 -c "import json,sys; k=json.load(sys.stdin)['knowledge']; assert k['foods'] > 8000, k; print(k)"
+          curl -fs localhost:8000/ | grep -q "Forma"

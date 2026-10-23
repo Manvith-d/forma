@@ -1,0 +1,103 @@
+# Everything Forma learns from. The pipeline downloads each source, records its checksum and
+# license, and refuses anything whose license is not on the allowlist. Copyrighted books are
+# deliberately absent: the agents cite only public-domain and openly licensed material.
+licenses_allowed: [public-domain, cc-by, cc0, unlicense, api-terms]
+
+documents:
+  # ---- Government guidelines (public domain) -------------------------------------------------
+  - id: dga-2025
+    title: Dietary Guidelines for Americans, 2025-2030
+    publisher: U.S. Department of Agriculture and U.S. Department of Health and Human Services
+    url: https://cdn.realfood.gov/DGA.pdf
+    kind: pdf
+    license: public-domain
+    topic: nutrition
+  - id: pag-2018
+    title: Physical Activity Guidelines for Americans, 2nd edition
+    publisher: U.S. Department of Health and Human Services
+    url: https://odphp.health.gov/sites/default/files/2019-09/Physical_Activity_Guidelines_2nd_edition.pdf
+    kind: pdf
+    license: public-domain
+    topic: training
+
+  # ---- NIH Office of Dietary Supplements fact sheets (public domain) --------------------------
+  - { id: ods-vitamin-k, title: "Vitamin K: Fact Sheet for Health Professionals", publisher: NIH Office of Dietary Supplements,
+      url: "https://ods.od.nih.gov/factsheets/VitaminK-HealthProfessional/", kind: html, license: public-domain, topic: medical }
+  - { id: ods-potassium, title: "Potassium: Fact Sheet for Health Professionals", publisher: NIH Office of Dietary Supplements,
+      url: "https://ods.od.nih.gov/factsheets/Potassium-HealthProfessional/", kind: html, license: public-domain, topic: medical }
+  - { id: ods-vitamin-b12, title: "Vitamin B12: Fact Sheet for Health Professionals", publisher: NIH Office of Dietary Supplements,
+      url: "https://ods.od.nih.gov/factsheets/VitaminB12-HealthProfessional/", kind: html, license: public-domain, topic: medical }
+  - { id: ods-calcium, title: "Calcium: Fact Sheet for Health Professionals", publisher: NIH Office of Dietary Supplements,
+      url: "https://ods.od.nih.gov/factsheets/Calcium-HealthProfessional/", kind: html, license: public-domain, topic: medical }
+  - { id: ods-vitamin-d, title: "Vitamin D: Fact Sheet for Health Professionals", publisher: NIH Office of Dietary Supplements,
+      url: "https://ods.od.nih.gov/factsheets/VitaminD-HealthProfessional/", kind: html, license: public-domain, topic: medical }
+
+  # ---- Peer-reviewed research, open access (license verified against Europe PMC) ----------------
+  - { id: issn-weight-reduction, pmcid: PMC13665703, kind: europepmc, license: cc-by, topic: nutrition }
+  - { id: issn-protein, pmcid: PMC5477153, kind: europepmc, license: cc-by, topic: nutrition }
+  - { id: issn-diets-body-composition, pmcid: PMC5470183, kind: europepmc, license: cc-by, topic: nutrition }
+  - { id: issn-nutrient-timing, pmcid: PMC5596471, kind: europepmc, license: cc-by, topic: nutrition }
+  - { id: issn-meal-frequency, pmcid: PMC3070624, kind: europepmc, license: cc-by, topic: nutrition }
+  - { id: issn-caffeine, pmcid: PMC7777221, kind: europepmc, license: cc-by, topic: nutrition }
+  - { id: issn-creatine, pmcid: PMC5469049, kind: europepmc, license: cc-by, topic: nutrition }
+  - { id: issn-omega-3, pmcid: PMC11737053, kind: europepmc, license: cc-by, topic: nutrition }
+  - { id: rt-progressive-overload, pmcid: PMC9528903, kind: europepmc, license: cc-by, topic: training }
+  - { id: rt-nonlinear-periodization, pmcid: PMC3588896, kind: europepmc, license: cc-by, topic: training }
+  - { id: rt-frequency-equal-volume, pmcid: PMC6016534, kind: europepmc, license: cc-by, topic: training }
+  - { id: rt-volume-vs-load, pmcid: PMC8962955, kind: europepmc, license: cc-by, topic: training }
+  - { id: ex-hypertension-older-adults, pmcid: PMC7512073, kind: europepmc, license: cc-by, topic: medical }
+  - { id: ex-resistant-hypertension, pmcid: PMC9161026, kind: europepmc, license: cc-by, topic: medical }
+  - { id: ex-diabetes-position, pmcid: PMC9806892, kind: europepmc, license: cc-by, topic: medical }
+  - { id: rt-knee-osteoarthritis, pmcid: PMC12821314, kind: europepmc, license: cc-by, topic: medical }
+  - { id: rt-sarcopenia-dose, pmcid: PMC12590801, kind: europepmc, license: cc-by, topic: medical }
+
+datasets:
+  - id: fdc-foundation
+    title: USDA FoodData Central, Foundation Foods (April 2026)
+    url: https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_csv_2026-04-30.zip
+    license: public-domain
+  - id: fdc-sr-legacy
+    title: USDA FoodData Central, SR Legacy (April 2018)
+    url: https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip
+    license: public-domain
+  - id: exercises
+    title: Free Exercise DB (yuhonas/free-exercise-db)
+    url: https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json
+    license: unlicense
+  - id: openfda-labels
+    title: FDA drug labeling via openFDA
+    url: https://api.fda.gov/drug/label.json
+    license: public-domain
+  - id: themealdb
+    title: TheMealDB community recipes (fetched at build time, not redistributed)
+    url: https://www.themealdb.com/api/json/v1/1/search.php
+    license: api-terms
+
+# Medications Forma knows how to screen, grouped by class. Brand names come from the FDA labels.
+medications:
+  beta_blocker: [metoprolol, atenolol, propranolol, carvedilol, bisoprolol]
+  ace_inhibitor: [lisinopril, enalapril, ramipril]
+  arb: [losartan, valsartan]
+  thiazide_diuretic: [hydrochlorothiazide, chlorthalidone]
+  loop_diuretic: [furosemide]
+  potassium_sparing_diuretic: [spironolactone]
+  calcium_channel_blocker: [amlodipine]
+  insulin: [insulin glargine, insulin lispro]
+  sulfonylurea: [glipizide, glimepiride, glyburide]
+  biguanide: [metformin]
+  sglt2_inhibitor: [empagliflozin, dapagliflozin, canagliflozin]
+  glp1_agonist: [semaglutide, liraglutide, tirzepatide]
+  statin: [atorvastatin, simvastatin, lovastatin, rosuvastatin]
+  vitamin_k_antagonist: [warfarin]
+  doac: [apixaban, rivaroxaban]
+  maoi: [phenelzine, tranylcypromine]
+  lithium: [lithium carbonate]
+  thyroid_hormone: [levothyroxine]
+  ssri: [sertraline, fluoxetine, escitalopram]
+  fluoroquinolone: [ciprofloxacin, levofloxacin]
+  tetracycline: [doxycycline]
+  corticosteroid: [prednisone]
+  bisphosphonate: [alendronate]
+  stimulant: [methylphenidate, amphetamine]
+  nsaid: [ibuprofen, naproxen]
+  retinoid: [isotretinoin]

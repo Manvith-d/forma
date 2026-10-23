@@ -1,0 +1,46 @@
+[project]
+name = "forma"
+version = "0.1.0"
+description = "An evidence-based multi-agent fitness coach: training, nutrition, medical-safety and pantry-chef agents grounded in a layered data pipeline over public-domain and open-access sources."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Manvith Reddy Dalli" }]
+requires-python = ">=3.12"
+dependencies = [
+  "langgraph==1.2.14",
+  "duckdb==1.5.6",
+  "pypdf==6.19.0",
+  "beautifulsoup4==4.15.0",
+  "pyyaml==6.0.3",
+  "rapidfuzz==3.14.6",
+  "numpy==2.5.3",
+  "fastembed==0.8.1",
+  "onnxruntime==1.30.0",
+  "fastapi==0.142.2",
+  "uvicorn==0.54.0",
+  "pydantic==2.13.5",
+  "httpx==0.28.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "ruff==0.16.10"]
+
+[project.scripts]
+forma = "forma.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/forma"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 115
+target-version = "py312"
+
+[tool.ruff.lint]
+ignore = ["ISC004"]  # multi-line SQL strings inside the check tables are intentional

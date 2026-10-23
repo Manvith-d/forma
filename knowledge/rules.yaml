@@ -1,0 +1,215 @@
+# Forma's rulebook. Each rule turns a medical condition or a medication into concrete limits on the
+# training plan and the diet, and each must be backed by evidence: a pattern that the pipeline has to
+# find, verbatim, in an ingested source (an FDA label or a document). A rule whose evidence cannot be
+# found fails the pipeline's quality checks, so the agents never apply an unsupported rule.
+#
+# Effects vocabulary (applied in safety.py):
+#   avoid_food_tags      remove foods carrying these tags from meals
+#   steady_nutrient      keep this nutrient's daily intake consistent; flag foods high in it
+#   spacing              take the medication apart from these food tags (a timing note on meals)
+#   min_carb_g           no very-low-carbohydrate days below this
+#   max_deficit_pct      cap the calorie deficit at this share of maintenance
+#   no_deficit           no calorie deficit at all
+#   protein_cap_g_per_kg cap protein
+#   hydration            emphasise fluids and electrolytes around training
+#   intensity            "rpe": prescribe by perceived exertion instead of heart rate
+#   avoid_exercise_tags  remove exercises carrying these tags
+#   pre_exercise         checks to do before each session
+#   clearance            "required" before starting, or "vigorous" (needed only for vigorous work)
+
+medications:
+  - id: warfarin-vitamin-k
+    drug_class: vitamin_k_antagonist
+    effects: { steady_nutrient: vitamin_k_ug }
+    message: Keep vitamin K intake steady from day to day. Big swings in leafy greens change how warfarin works.
+    evidence:
+      - { doc: ods-vitamin-k, pattern: "warfarin" }
+      - { label: warfarin, pattern: "vitamin K" }
+  - id: statin-grapefruit
+    drug_class: statin
+    generics: [atorvastatin, simvastatin, lovastatin]
+    effects: { avoid_food_tags: [grapefruit] }
+    message: Skip grapefruit and grapefruit juice; they raise statin levels and the risk of muscle damage.
+    evidence:
+      - { label: simvastatin, pattern: "grapefruit juice" }
+  - id: maoi-tyramine
+    drug_class: maoi
+    effects: { avoid_food_tags: [tyramine] }
+    message: Avoid high-tyramine foods (aged cheese, cured meats, fermented soy, tap beer); with an MAOI they can trigger a hypertensive crisis.
+    evidence:
+      - { label: phenelzine, pattern: "tyramine" }
+  - id: raas-potassium
+    drug_class: [ace_inhibitor, arb, potassium_sparing_diuretic]
+    effects: { avoid_food_tags: [potassium_supplement] }
+    message: No potassium supplements or potassium-based salt substitutes unless the prescriber says so; these drugs raise blood potassium.
+    evidence:
+      - { label: lisinopril, pattern: "potassium" }
+      - { label: spironolactone, pattern: "potassium" }
+  - id: thyroid-spacing
+    drug_class: thyroid_hormone
+    effects: { spacing: { tags: [calcium_rich, soy], hours: 4 } }
+    message: Take levothyroxine on an empty stomach and keep calcium-rich, soy and high-fiber foods a few hours away from it.
+    evidence:
+      - { label: levothyroxine, pattern: "food" }
+      - { doc: ods-calcium, pattern: "levothyroxine" }
+  - id: sglt2-ketoacidosis
+    drug_class: sglt2_inhibitor
+    effects: { min_carb_g: 100, max_deficit_pct: 20, hydration: true }
+    message: Avoid very-low-carbohydrate days and steep calorie cuts; reduced caloric intake can precipitate ketoacidosis on this medication. Stay hydrated.
+    evidence:
+      - { label: empagliflozin, pattern: "reduced caloric int" }
+  - id: insulin-exercise
+    drug_class: [insulin, sulfonylurea]
+    effects: { pre_exercise: [check blood glucose before and after training, carry fast-acting carbohydrate], clearance: vigorous }
+    message: Exercise lowers blood glucose. Check glucose around sessions and keep fast carbs on hand; ask your care team how to adjust doses for training days.
+    evidence:
+      - { label: insulin glargine, pattern: "physical activity" }
+      - { label: glipizide, pattern: "strenuous exercise" }
+      - { doc: ex-diabetes-position, pattern: "hypoglycemia prevention" }
+  - id: metformin-b12
+    drug_class: biguanide
+    effects: { steady_nutrient: vitamin_b12_ug }
+    message: Long-term metformin can lower vitamin B12; include B12 sources (fish, eggs, dairy, fortified foods) and ask about checking levels.
+    evidence:
+      - { doc: ods-vitamin-b12, pattern: "metformin" }
+  - id: beta-blocker-rpe
+    drug_class: beta_blocker
+    effects: { intensity: rpe }
+    message: Beta-blockers lower your heart rate, so heart-rate zones under-read your effort. Training is prescribed by perceived exertion instead.
+    evidence:
+      - { label: metoprolol, pattern: "heart rate" }
+  - id: diuretic-hydration
+    drug_class: [thiazide_diuretic, loop_diuretic]
+    effects: { hydration: true }
+    message: Diuretics increase fluid and electrolyte losses; drink to thirst and take extra care in heat.
+    evidence:
+      - { label: furosemide, pattern: "electrolyte depletion" }
+  - id: lithium-fluids
+    drug_class: lithium
+    effects: { hydration: true }
+    message: Sweating and dehydration change lithium levels. Keep fluids and salt intake steady, especially on long or hot sessions.
+    evidence:
+      - { label: lithium carbonate, pattern: "dehydration" }
+  - id: fluoroquinolone-tendon
+    drug_class: fluoroquinolone
+    effects: { avoid_exercise_tags: [plyometric, sprint, heavy_eccentric] }
+    message: This antibiotic carries a tendon-rupture warning. No jumping, sprinting or heavy lowering work until the course is finished.
+    evidence:
+      - { label: ciprofloxacin, pattern: "tendon rupture" }
+  - id: tetracycline-spacing
+    drug_class: tetracycline
+    effects: { spacing: { tags: [calcium_rich], hours: 2 } }
+    message: Keep dairy and calcium-rich foods a couple of hours away from doxycycline doses.
+    evidence:
+      - { label: doxycycline, pattern: "calcium" }
+  - id: bisphosphonate-morning
+    drug_class: bisphosphonate
+    effects: { spacing: { tags: [any_food], hours: 0.5 } }
+    message: Take alendronate with plain water at least 30 minutes before the first food or drink of the day.
+    evidence:
+      - { label: alendronate, pattern: "plain water" }
+  - id: glp1-hydration-protein
+    drug_class: glp1_agonist
+    effects: { hydration: true }
+    message: Nausea and reduced appetite are common on this medication; prioritise protein at each meal and keep fluids up.
+    evidence:
+      - { label: tirzepatide, pattern: "dehydration" }
+  - id: stimulant-heart-rate
+    drug_class: stimulant
+    effects: { intensity: rpe, hydration: true }
+    message: Stimulants raise heart rate and blood pressure; pace sessions by perceived effort and avoid training in high heat.
+    evidence:
+      - { label: methylphenidate, pattern: "Heart Rate" }
+  - id: isotretinoin-vitamin-a
+    drug_class: retinoid
+    effects: { avoid_food_tags: [vitamin_a_supplement] }
+    message: No vitamin A supplements while on isotretinoin.
+    evidence:
+      - { label: isotretinoin, pattern: "vitamin A" }
+  - id: corticosteroid-bone
+    drug_class: corticosteroid
+    effects: { steady_nutrient: calcium_mg }
+    message: Long courses of corticosteroids weaken bone. Include calcium and vitamin D sources and keep up weight-bearing and strength work.
+    evidence:
+      - { label: prednisone, pattern: "bone" }
+
+conditions:
+  - id: symptoms-stop
+    condition: exertional_symptoms
+    effects: { clearance: required, max_intensity: light }
+    message: Chest pain or pressure, fainting, or unusual breathlessness need a medical check before you start a program. Until then the plan stays at light activity.
+    evidence:
+      - { doc: pag-2018, pattern: "chest pain or pressure" }
+  - id: chronic-condition-clearance
+    condition: [cardiovascular_disease, type1_diabetes, type2_diabetes, kidney_disease]
+    effects: { clearance: vigorous, max_intensity: moderate }
+    message: With this condition, check with your health care provider before vigorous exercise. The plan uses moderate intensity until you have.
+    evidence:
+      - { doc: pag-2018, pattern: "consult with a health care provider" }
+  - id: pregnancy
+    condition: pregnancy
+    effects: { no_deficit: true, clearance: required, avoid_exercise_tags: [supine_late, contact, fall_risk, heavy] }
+    message: During pregnancy the plan targets at least 150 minutes of moderate activity a week, with no calorie deficit, under your provider's care.
+    evidence:
+      - { doc: pag-2018, pattern: "Women who are pregnant should be under the care of a health care provider" }
+      - { doc: pag-2018, pattern: "150 minutes" }
+  - id: hypertension
+    condition: hypertension
+    effects: { avoid_exercise_tags: [max_effort, isometric_hold] }
+    message: Regular aerobic and moderate strength training help lower blood pressure. Breathe through each rep and skip maximal lifts and long breath-holds.
+    evidence:
+      - { doc: pag-2018, pattern: "hypertension" }
+      - { doc: ex-hypertension-older-adults, pattern: "blood pressure" }
+  - id: diabetes-training
+    condition: [type1_diabetes, type2_diabetes]
+    effects: { pre_exercise: [check blood glucose before training] }
+    message: Both aerobic and strength training improve glucose control; check glucose before sessions, and keep a snack nearby.
+    evidence:
+      - { doc: ex-diabetes-position, pattern: "blood glucose levels before and during exercise" }
+  - id: knee-osteoarthritis
+    condition: [knee_osteoarthritis, knee_pain]
+    effects: { avoid_exercise_tags: [plyometric, high_impact, deep_knee_flexion] }
+    message: Strength work for the hips and thighs eases knee pain; the plan swaps jumping and deep loaded squats for low-impact options.
+    evidence:
+      - { doc: pag-2018, pattern: "osteoarthritis" }
+      - { doc: rt-knee-osteoarthritis, pattern: "resistance training" }
+  - id: low-back-pain
+    condition: low_back_pain
+    effects: { avoid_exercise_tags: [heavy_spinal_load, loaded_flexion] }
+    message: The plan avoids heavy spinal loading and loaded bending while your back settles, and builds core and hip strength instead.
+    evidence:
+      - { doc: pag-2018, pattern: "joint pain" }
+  - id: osteoporosis
+    condition: osteoporosis
+    effects: { avoid_exercise_tags: [loaded_flexion, high_impact], steady_nutrient: calcium_mg }
+    message: Strength and weight-bearing work protect bone; the plan avoids loaded forward bending and high-impact jumps, and meals keep calcium up.
+    evidence:
+      - { doc: pag-2018, pattern: "bone" }
+      - { doc: ods-calcium, pattern: "osteoporosis" }
+  - id: kidney-protein
+    condition: kidney_disease
+    effects: { protein_cap_g_per_kg: 0.8, avoid_food_tags: [potassium_supplement] }
+    message: With kidney disease, protein and potassium targets belong to your nephrology team, so the plan keeps protein moderate.
+    evidence:
+      - { doc: issn-protein, pattern: "renal" }
+      - { doc: ods-potassium, pattern: "kidney" }
+  - id: eating-disorder
+    condition: eating_disorder_history
+    effects: { no_deficit: true }
+    message: Given your history, the plan focuses on regular, adequate meals and enjoyable training rather than a calorie deficit. A dietitian or your care team can tailor this further.
+    evidence:
+      - { doc: issn-weight-reduction, pattern: "lean mass" }
+  - id: older-adult-balance
+    condition: older_adult
+    effects: { add_balance: true }
+    message: Over 65, the plan adds balance training alongside aerobic and strength work.
+    evidence:
+      - { doc: pag-2018, pattern: "balance training" }
+
+# Population rules the nutrition and training agents always apply.
+standards:
+  - { id: rate-of-loss, value: "0.5-1.0% of body weight per week", evidence: { doc: issn-weight-reduction, pattern: "0.5%–1.0% of total body weight" } }
+  - { id: protein-range, value: "1.4-2.0 g/kg/day, more in a deficit", evidence: { doc: issn-protein, pattern: "1.4 to 2.0 g/kg/day" } }
+  - { id: aerobic-minimum, value: "150-300 min moderate per week", evidence: { doc: pag-2018, pattern: "150 minutes to 300 minutes of moderate-intensity" } }
+  - { id: saturated-fat, value: "under 10% of calories", evidence: { doc: dga-2025, pattern: "saturated fat consumption should not exceed 10%" } }
+  - { id: progression, value: "progress gradually", evidence: { doc: rt-progressive-overload, pattern: "progress" } }
