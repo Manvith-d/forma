@@ -19,6 +19,7 @@ from ..config import Settings
 
 UA = {"User-Agent": "Forma-pipeline/0.1 (educational fitness coach; github.com/Manvith-d/forma)"}
 EUROPE_PMC = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+WAYBACK = "https://web.archive.org/web"
 LICENSE_NAMES = {"cc by": "cc-by", "cc0": "cc0"}
 
 
@@ -27,18 +28,28 @@ class LicenseError(RuntimeError):
 
 
 def _get(client: httpx.Client, url: str, **params) -> httpx.Response:
-    for attempt in range(5):  # gov servers drop connections, rate-limit (429) or briefly bot-block cloud IPs (403)
+    for attempt in range(4):  # gov servers drop connections, rate-limit (429) or bot-block cloud IPs (403, retried once)
         try:
             r = client.get(url, params=params or None)
-            if r.status_code < 500 and r.status_code not in (403, 429):
+            if r.status_code < 500 and r.status_code != 429 and not (r.status_code == 403 and attempt == 0):
                 r.raise_for_status()
                 return r
         except httpx.TransportError:
-            if attempt == 4:
+            if attempt == 3:
                 raise
-        time.sleep(2 * 2 ** attempt)
+        time.sleep(1.5 * 2 ** attempt)
     r.raise_for_status()
     return r
+
+
+def _page(client: httpx.Client, url: str) -> httpx.Response:
+    """A public page, or the Internet Archive's unmodified copy (id_) when the site refuses this machine."""
+    try:
+        return _get(client, url)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code != 403:
+            raise
+        return _get(client, f"{WAYBACK}/{datetime.now(UTC).year}id_/{url}")
 
 
 def _save(path: Path, content: bytes) -> dict:
@@ -59,8 +70,11 @@ def fetch_all(s: Settings, manifest: dict, refresh: bool = False) -> list[dict]:
                              "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest(),
                              "fetched_at": datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat()})
                 return
+            got = fetch()
+            if isinstance(got, httpx.Response):  # record where the bytes really came from (a mirror, after redirects)
+                url, got = str(got.url), got.content
             rows.append({"source_id": source_id, "url": url, "license": license,
-                         "fetched_at": datetime.now(UTC).isoformat(), **_save(path, fetch())})
+                         "fetched_at": datetime.now(UTC).isoformat(), **_save(path, got)})
 
         for doc in manifest["documents"]:
             d = raw / doc["id"]
@@ -77,7 +91,7 @@ def fetch_all(s: Settings, manifest: dict, refresh: bool = False) -> list[dict]:
                      lambda doc=doc: _get(client, f"{EUROPE_PMC}/{doc['pmcid']}/fullTextXML").content)
             else:
                 name = "document.pdf" if doc["kind"] == "pdf" else "page.html"
-                keep(doc["id"], doc["url"], doc["license"], d / name, lambda doc=doc: _get(client, doc["url"]).content)
+                keep(doc["id"], doc["url"], doc["license"], d / name, lambda doc=doc: _page(client, doc["url"]))
 
         for ds in manifest["datasets"]:
             d = raw / ds["id"]

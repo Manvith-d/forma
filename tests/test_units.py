@@ -110,3 +110,15 @@ def test_rules_combine_to_the_strictest_limit():
     apply(c, {"rule_id": "c", "message": "", "citations": [], "effects": {"clearance": "none", "max_intensity": "vigorous"}})
     assert (c.clearance, c.max_intensity, c.avoid_food_tags) == ("required", "light", {"grapefruit"})
     assert [n["rule_id"] for n in c.notes] == ["a", "b", "c"]
+
+
+def test_a_refused_page_falls_back_to_the_archive(monkeypatch):
+    import httpx
+
+    from forma.pipeline import bronze
+
+    monkeypatch.setattr(bronze.time, "sleep", lambda s: None)
+    refuse = httpx.MockTransport(lambda r: httpx.Response(403) if r.url.host == "ods.od.nih.gov" else httpx.Response(200, content=b"ok"))
+    with httpx.Client(transport=refuse) as client:
+        r = bronze._page(client, "https://ods.od.nih.gov/factsheets/VitaminK-HealthProfessional/")
+    assert r.content == b"ok" and str(r.url).startswith(bronze.WAYBACK) and "id_/https://ods.od.nih.gov" in str(r.url)

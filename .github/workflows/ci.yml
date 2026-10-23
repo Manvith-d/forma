@@ -28,7 +28,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check src tests
       - name: Data pipeline (bronze -> silver -> gold) with 13 quality checks
-        run: forma pipeline || (sleep 60 && forma pipeline)  # a second pass fetches only what a source refused
+        run: forma pipeline
       - run: pytest -q
       - name: Eval gates on 29 personas (safety 100%, quality 90%+) and retrieval
         run: forma eval --json eval.json
