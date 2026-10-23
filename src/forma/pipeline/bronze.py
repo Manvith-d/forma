@@ -27,16 +27,16 @@ class LicenseError(RuntimeError):
 
 
 def _get(client: httpx.Client, url: str, **params) -> httpx.Response:
-    for attempt in range(4):  # gov and archive servers occasionally drop connections
+    for attempt in range(5):  # gov servers drop connections, rate-limit (429) or briefly bot-block cloud IPs (403)
         try:
             r = client.get(url, params=params or None)
-            if r.status_code < 500:
+            if r.status_code < 500 and r.status_code not in (403, 429):
                 r.raise_for_status()
                 return r
         except httpx.TransportError:
-            if attempt == 3:
+            if attempt == 4:
                 raise
-        time.sleep(1.5 * 2 ** attempt)
+        time.sleep(2 * 2 ** attempt)
     r.raise_for_status()
     return r
 
