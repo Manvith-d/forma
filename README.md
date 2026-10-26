@@ -6,6 +6,8 @@ Tell it your goal, your timeline, the training you can do and how often. It asks
 
 Everything runs locally and for free: a local model through [Ollama](https://ollama.com) (`qwen3:8b`), DuckDB, and an ONNX embedding model on the CPU.
 
+**Try it:** [forma-nnq8.onrender.com](https://forma-nnq8.onrender.com) is a free public demo on Render. It runs rules-only, without the LLM, and sleeps when idle, so the first visit can take about a minute to wake it. Please don't enter real health details there.
+
 ![The live view: the conversation, the agent network and the activity log of every hand-off and tool call](docs/live.jpg)
 
 <p><img src="docs/plan.jpg" width="49%" alt="The plan: strength on Monday, Wednesday and Friday, a swim on Saturday, and a 17-week progression with deloads"> <img src="docs/meals.jpg" width="49%" alt="The meals: grapefruit left out for a statin, soy sauce trimmed to keep sodium under 2,300 mg, recipes from the pantry"></p>
