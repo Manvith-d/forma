@@ -43,6 +43,7 @@ button { font: inherit; cursor: pointer; }
 .cite { display: inline-block; font-size: 11px; font-weight: 700; padding: 0 5px; margin: 0 1px; border-radius: 6px; background: color-mix(in srgb, var(--Coach) 14%, transparent); color: var(--Coach); border: 0; vertical-align: 1px; }
 .caret::after { content: "▍"; animation: blink 1s steps(1) infinite; color: var(--muted); }
 .working { display: flex; align-items: center; gap: 8px; padding: 0 18px 8px; color: var(--muted); font-size: 13px; }
+.demo-note { margin: 0; padding: 0 18px 8px; color: var(--muted); font-size: 12px; }
 .working .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--agent, var(--accent)); animation: pulse 1s infinite; }
 .quick { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 10px; }
 .quick button { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: 13px; }

@@ -38,10 +38,11 @@ async function health() {
   if (!h) return;
   const k = h.knowledge;
   $("#status").innerHTML = [
-    `<span class="pill ${h.llm.available ? "on" : "off"}" title="Runs locally through Ollama">${h.llm.available ? `Local model: ${esc(h.llm.model)}` : "Local model offline: rules-only mode"}</span>`,
+    `<span class="pill ${h.llm.available ? "on" : "off"}" title="Runs locally through Ollama">${h.llm.available ? `Local model: ${esc(h.llm.model)}` : h.demo ? "Public demo: rules-only, no LLM" : "Local model offline: rules-only mode"}</span>`,
     `<span class="pill" title="Pipeline run ${esc(k.pipeline_run)}">${k.documents} documents · ${k.labels} FDA labels · ${k.foods.toLocaleString()} foods · ${k.exercises} exercises</span>`,
     k.checks_passed ? `<span class="pill on">Data checks ${k.checks_passed.p}/${k.checks_passed.n}</span>` : "",
   ].join("");
+  $("#demo-note").hidden = !h.demo;
 }
 
 function connect() {

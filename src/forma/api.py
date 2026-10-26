@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -46,7 +47,8 @@ def index() -> FileResponse:
 @app.get("/api/health")
 def health() -> dict:
     c = coach_of(app)
-    return {"status": "ok", "llm": {"model": c.llm.model, "available": c.llm.available}, "knowledge": c.kb.stats()}
+    return {"status": "ok", "llm": {"model": c.llm.model, "available": c.llm.available}, "knowledge": c.kb.stats(),
+            "demo": os.environ.get("FORMA_DEMO") == "1"}  # the public demo: rules-only, says so on the page
 
 
 @app.get("/api/sources")

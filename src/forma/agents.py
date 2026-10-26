@@ -148,11 +148,14 @@ def build(kb: KB, llm: LLM):
             route = "swap"
         elif re.search(r"\b(fridge|pantry|i have|cook|recipe|meals?|ingredients|dinner|lunch|breakfast|snack|tomorrow)\b", low):
             route = "pantry"
-        elif re.search(r"\b(started|taking|prescribed|diagnosed|medication|pregnan|injur|surgery|doctor)\b", low) or any(
-                kb.resolve_drug(w) for w in re.findall(r"[a-z]{5,}", low)):
-            route = "medical"
+        elif any(kb.resolve_drug(w) for w in re.findall(r"[a-z]{5,}", low)):
+            route = "medical"  # a medication by name: screen it
         elif re.search(r"\b(weigh|now \d|days a week|times a week|minutes|new plan|change my plan|update)\b", low):
             route = "intake"
+        elif s.plan and low.endswith("?"):
+            route = "answer"  # "is this safe with my medication?" asks about the plan; it doesn't change the history
+        elif re.search(r"\b(started|taking|prescribed|diagnosed|medication|pregnan|injur|surgery|doctor)\b", low):
+            route = "medical"
         else:
             route = "answer"
         emit("route", agent="Coach", route=route)
@@ -449,7 +452,8 @@ def build(kb: KB, llm: LLM):
                         "today_calories": s.targets["days"][s.today]["kcal"], "bmr": s.targets["bmr"],
                         "maintenance_avg_kcal": s.targets["maintenance_avg_kcal"], "daily_adjust_kcal": s.targets["daily_adjust_kcal"],
                         "protein_g_per_kg": s.targets["protein_g_per_kg"], "medications": s.medical.medications,
-                        "conditions": s.medical.conditions, "week": [f"{d['day']}: {d['name']}" for d in s.plan["template"]]}
+                        "conditions": s.medical.conditions, "week": [f"{d['day']}: {d['name']}" for d in s.plan["template"]],
+                        "medical_notes": [n["message"] for n in s.constraints.notes], "clearance": s.constraints.clearance}
         msg = {"id": uuid.uuid4().hex[:8], "role": "agent", "agent": "Coach", "text": "", "kind": "answer", "quick": [], "refs": refs}
         emit("message_start", message=msg)
         text = ""
@@ -464,7 +468,7 @@ def build(kb: KB, llm: LLM):
             text += tok
             emit("token", id=msg["id"], text=tok)
         if not text.strip():
-            text = "Here is what the sources say:\n" + "\n".join(f"[{n}] {p.snippet[:220]}..." for n, p in zip(refs, passages, strict=True))
+            text = rules_answer(s, q, refs, passages)
             emit("token", id=msg["id"], text=text)
         msg["text"] = re.sub(r"\[n(\d+)\]", r"[\1]", text.strip())  # normalise "[n3]" to "[3]"
         msg["refs"] = sorted({int(x) for x in re.findall(r"\[(\d+)\]", msg["text"])} & set(refs))
@@ -498,6 +502,26 @@ def build(kb: KB, llm: LLM):
     return g.compile()
 
 
+def rules_answer(s: Session, q: str, refs: list[int], passages: list) -> str:
+    """Without the model: answer from the plan's own numbers and rules, then quote the two closest passages."""
+    low, lead = q.lower(), []
+    if s.targets:
+        t, day = s.targets, s.targets["days"][s.today]
+        if re.search(r"calorie|kcal|eat|energy|food", low):
+            lead.append(f"Today's {day['kcal']} kcal: {day['explain']}.")
+        if re.search(r"calorie|kcal|fast|rate|weeks|long|lose", low) and t["rate_kg_per_week"]:
+            lead.append(f"That sets a change of {abs(t['rate_kg_per_week'])} kg a week, inside the 0.5-1.0% of body weight a "
+                        "week that keeps muscle (ISSN)." + (f" {t['notes'][0]}" if t["notes"] else ""))
+        if "protein" in low:
+            lead.append(f"Protein: {day['protein_g']} g a day, {t['protein_g_per_kg']} g per kg of {t['protein_basis_kg']} kg.")
+    if s.constraints and re.search(r"safe|medic|drug|pill|condition|risk|doctor", low):
+        lead += [f"- {n['message']} " + "".join(f"[{r}]" for r in n.get("refs", [])) for n in s.constraints.notes] or [
+            "Nothing in your answers changes the plan: no rule in the rulebook applies."]
+        lead.append("Forma never changes medication; ask your clinician or pharmacist about anything not covered here.")
+    quotes = [f"[{n}] {p.snippet[:220]}..." for n, p in list(zip(refs, passages, strict=True))[: 2 if lead else 3]]
+    return "\n".join([*lead, "What the sources say:" if lead else "Here is what the sources say:", *quotes])
+
+
 def title_for(meal: dict) -> str:
     n = meal["names"]
     main = n.get("protein") or n.get("morning_protein") or n.get("fruit") or "Snack"
@@ -505,6 +529,8 @@ def title_for(meal: dict) -> str:
     dish = {"stir_fry": "stir-fry", "tray_bake": "tray bake", "pasta": "pasta", "simmer": "stew", "skillet": "skillet",
             "bowl": "bowl", "scramble": "scramble", "oats": "oats", "yogurt_bowl": "bowl", "snack": "snack",
             "boiled_eggs": "boiled eggs"}.get(meal["technique"], "")
+    if main.lower() in dish:
+        return dish.capitalize()
     return " ".join(f"{main.capitalize()}{' & ' + side if side and side != main else ''} {dish}".split())
 
 

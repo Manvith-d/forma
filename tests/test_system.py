@@ -50,6 +50,9 @@ def test_full_conversation(coach):
     tomorrow = converse(coach, s, "What can I cook tomorrow?")
     assert any(e["type"] == "message" and e["message"]["agent"] == "Chef" for e in tomorrow)
     assert {m["meal"]: m["title"] for m in s.meals["meals"]} != before  # another day leads with other mains
+    safety = converse(coach, s, "Is this safe with my medication?")  # a question, not a new history: no re-plan
+    assert not {e["agent"] for e in safety if e["type"] == "agent"} & {"Trainer", "Nutritionist", "Chef"}
+    assert s.messages[-1]["kind"] == "answer" and "grapefruit" in s.messages[-1]["text"]
 
 
 def test_chef_closes_protein_gaps_and_flags_medication_timing():

@@ -133,7 +133,8 @@ def plan(library_rows: list[dict], p: Profile, c: Constraints, weeks: int) -> di
                              "cardio": finisher})
         else:
             mode = cardio_modes[cardio_slots.index(wd) % len(cardio_modes)]
-            hard = vigorous_ok and p.goal in ("endurance", "lose_fat") and wd == slots[-1] and "sprint" not in c.avoid_exercise_tags
+            hard = (vigorous_ok and p.goal in ("endurance", "lose_fat") and wd == slots[-1] and mode != "walking"
+                    and "sprint" not in c.avoid_exercise_tags)  # intervals, but not "walking intervals"
             template.append({"day": WEEKDAYS[wd], "name": f"{mode.capitalize()} {'intervals' if hard else 'endurance'}",
                              "type": "cardio", "minutes": minutes, "intensity": "vigorous" if hard else easy,
                              "warmup": "5 min easy", "exercises": [],
