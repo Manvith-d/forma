@@ -7,7 +7,7 @@ RUN git clone https://github.com/Manvith-d/forma /app && git -C /app checkout $F
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 FORMA_HOME=/tmp/forma FORMA_MODEL_CACHE=/opt/models FORMA_LLM=none FORMA_DEMO=1
 RUN pip install --no-cache-dir -e . && forma pipeline
-RUN useradd -m -u 1000 user
+RUN useradd -m -u 1000 user && chown -R user /tmp/forma
 USER user
 EXPOSE 7860
 CMD forma serve --host 0.0.0.0 --port 7860
