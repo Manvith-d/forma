@@ -176,7 +176,8 @@ def compose(found: list[tuple[str, Food]], blocked: set[str], meal: str, kcal: f
         else:
             return None
     else:
-        prot = take("protein", ("chicken", "tofu", "salmon", "fish", "turkey", "beef", "lentil", "chickpea"))
+        prot = take("protein", ("chicken", "tofu", "salmon", "fish", "turkey", "beef", "lentil", "chickpea")) or next(
+            (lf for lf in pool.get("morning_protein", []) if "egg" in lf[1].tags), None)  # eggs make a supper when nothing else does
         if not prot:
             return None
         legume = any(w in prot[1].name.lower() for w in ("lentil", "chickpea", "beans"))

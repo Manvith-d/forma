@@ -25,6 +25,17 @@ from forma.understand import parse_medical, parse_profile
     ("38, female, half marathon in 16 weeks", {"age": 38, "goal": "endurance", "weeks": 16}),
     ("I want to stay fit, I'm lactose intolerant", {"goal": "general_fitness", "allergies": ["dairy"]}),
     ("Age is 25, Sex is male and weight is 79 kgs. Height is 5'9 in feet", {"age": 25, "sex": "male", "weight_kg": 79.0, "height_cm": 175}),
+    ("I can train for 3 days in a week and each session can be 1 hour long and my age is 25 years",
+     {"days_per_week": 3, "minutes_per_session": 60, "age": 25, "weeks": None}),  # not a 1-week or 25-year timeline
+    ("age :25 years", {"age": 25, "weeks": None}), ("I'm 25", {"age": 25}), ("twenty-five years old", {"age": 25}),
+    ("M, 28", {"age": 28, "sex": "male"}), ("Sex: F", {"sex": "female"}),
+    ("I'm 30, male, my wife wants to join but her knees hurt", {"sex": "male"}),
+    ("5.9 ft", {"height_cm": 175}), ("5ft9", {"height_cm": 175}), ("five foot nine", {"height_cm": 175}), ("height is 175", {"height_cm": 175}),
+    ("79 kilograms", {"weight_kg": 79.0}), ("12 stone", {"weight_kg": 76.2}),
+    ("Mon, Wed and Fri", {"days_per_week": 3}), ("3-4 times a week", {"days_per_week": 3}), ("thrice a week", {"days_per_week": 3}),
+    ("weekends only", {"days_per_week": 2}), ("an hour and a half", {"minutes_per_session": 90}), ("1hr", {"minutes_per_session": 60}),
+    ("get lean", {"goal": "lose_fat"}), ("I want to bulk", {"goal": "build_muscle"}),
+    ("I've been lifting for 10 years", {"age": None, "weeks": None}),
 ])
 def test_parse_profile(text, expected):
     got = parse_profile(text)
@@ -41,6 +52,16 @@ def test_parse_medical_resolves_brands_and_negations():
     assert parse_medical("I'm allergic to peanuts. No medications.", lambda w: None)["allergies"] == ["peanut"]
     assert detect_symptoms("I get chest tightness on stairs") == ["chest tightness"]
     assert detect_conditions("on atenolol for blood pressure") == ["hypertension"]
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("I have a torn ACL and I haven't got a surgery for it yet.", ["knee_ligament_tear"]),  # a tear, not knee pain
+    ("Injury : Torn Achilles", ["acute_injury"]), ("I broke my wrist last month", ["acute_injury"]),
+    ("sprained my ankle", ["acute_injury"]), ("I hurt my knee yesterday", ["acute_injury", "knee_pain"]),
+    ("no injuries, no surgery", []), ("I'm not pregnant", []), ("I work at Oracle", []), ("adrenal fatigue", []),
+])
+def test_detect_conditions(text, expected):
+    assert detect_conditions(text) == expected
 
 
 @pytest.mark.parametrize("name, category, per100, has, lacks", [

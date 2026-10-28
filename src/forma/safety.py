@@ -7,6 +7,8 @@ person first, and vetoes any exercise, intensity or food that breaks a constrain
 
 from __future__ import annotations
 
+import re
+
 from .kb import KB
 from .models import Constraints, Medical, Profile
 
@@ -19,8 +21,10 @@ CONDITIONS = {  # canonical id -> words people use
                                "atrial fibrillation", "angina", "stroke", "bypass"),
     "kidney_disease": ("kidney disease", "ckd", "renal", "dialysis"),
     "knee_osteoarthritis": ("knee osteoarthritis", "knee arthritis", "arthritic knee", "osteoarthritis"),
-    "knee_pain": ("knee pain", "bad knee", "acl", "meniscus", "knee injury", "knee surgery", "knee hurts", "knees hurt",
-                  "sore knee", "knee aches", "knees ache"),
+    "knee_pain": ("knee pain", "bad knee", "knee injury", "knee surgery", "hurt my knee", "injured my knee", "knee hurts", "knees hurt", "sore knee", "knee aches", "knees ache"),
+    "knee_ligament_tear": ("acl", "mcl", "pcl", "meniscus", "knee ligament", "torn ligament in my knee"),
+    "acute_injury": ("torn", "tear", "ruptur", "fractur", "broke", "broken", "sprain", "strain", "dislocat", "injur",
+                     "hurt my", "pulled a", "pulled my", "surgery", "post-op", "achilles", "rotator cuff"),
     "low_back_pain": ("back pain", "bad back", "herniated", "slipped disc", "sciatica", "lower back"),
     "osteoporosis": ("osteoporosis", "osteopenia", "low bone density"),
     "pregnancy": ("pregnant", "pregnancy", "expecting"),
@@ -33,8 +37,12 @@ INTENSITY_ORDER = {"light": 0, "moderate": 1, "vigorous": 2}
 
 
 def detect_conditions(text: str) -> list[str]:
-    low = text.lower()
-    return sorted({cid for cid, words in CONDITIONS.items() if any(w in low for w in words)})
+    low = re.sub(r"\b(?:not|never been|no longer) pregnant\b|\bno pregnancy\b|\b(?:no|not|never|without|never had|haven'?t had)\s+"
+                 r"(?:any\s+|recent\s+|major\s+)?(?:injur\w*|surger(?:y|ies)|fractures?|broken bones?|tears?)\b", "", text.lower())
+    found = {cid for cid, words in CONDITIONS.items() if any(re.search(rf"\b{re.escape(w)}", low) for w in words)}
+    if "knee_ligament_tear" in found:
+        found.discard("acute_injury")  # the knee rule already covers the tear
+    return sorted(found)
 
 
 def detect_symptoms(text: str) -> list[str]:

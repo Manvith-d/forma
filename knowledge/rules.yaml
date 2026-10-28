@@ -173,6 +173,20 @@ conditions:
     evidence:
       - { doc: pag-2018, pattern: "osteoarthritis" }
       - { doc: rt-knee-osteoarthritis, pattern: "resistance training" }
+  - id: knee-ligament-tear
+    condition: knee_ligament_tear
+    effects: { clearance: required, max_intensity: light, avoid_exercise_tags: [plyometric, high_impact, sprint, deep_knee_flexion, heavy_spinal_load, max_effort] }
+    message: A torn ACL, meniscus or other knee ligament needs a physiotherapist or orthopedic doctor to guide your rehab, before and after any surgery. Until they clear you, the plan stays light and leaves out jumping, running, sprints and deep or heavy squats.
+    evidence:
+      - { doc: pag-2018, pattern: "People who have had a past injury are at risk of re-injuring that body part" }
+      - { doc: pag-2018, pattern: "does not discuss therapeutic exercise or rehabilitation" }
+  - id: injury-clearance
+    condition: acute_injury
+    effects: { clearance: required, max_intensity: light, avoid_exercise_tags: [plyometric, high_impact, sprint, heavy_eccentric, max_effort] }
+    message: An injury such as a tear, fracture, sprain or recent surgery needs your doctor or physiotherapist to set your rehab. Until they clear you, the plan stays light and leaves out jumping, sprinting, heavy lowering work and maximal lifts.
+    evidence:
+      - { doc: pag-2018, pattern: "People who have had a past injury are at risk of re-injuring that body part" }
+      - { doc: pag-2018, pattern: "does not discuss therapeutic exercise or rehabilitation" }
   - id: low-back-pain
     condition: low_back_pain
     effects: { avoid_exercise_tags: [heavy_spinal_load, loaded_flexion] }

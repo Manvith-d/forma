@@ -35,13 +35,22 @@ from .config import settings
 from .foods import food_tags
 from .kb import KB
 from .llm import LLM
-from .models import Citation, Constraints, Medical, Profile
-from .understand import understand_medical, understand_profile
+from .models import REQUIRED, Citation, Constraints, Medical, Profile
+from .understand import NO_WORDS, parse_medical, parse_profile, understand_medical, understand_profile
 
 AGENTS = ["Coach", "Intake", "Medical", "Trainer", "Nutritionist", "Chef"]
-FIELD_PHRASES = {"age": "your age", "sex": "your sex (the energy equations differ)", "height_cm": "your height",
-                 "weight_kg": "your weight", "goal": "your main goal", "days_per_week": "how many days a week you can train",
+FIELD_PHRASES = {"age": "your age", "sex": "your sex (the energy equations differ)", "height_cm": "your height (cm, or feet and inches)",
+                 "weight_kg": "your weight (kg or lbs)", "goal": "your main goal", "days_per_week": "how many days a week you can train",
                  "minutes_per_session": "how long each session can be"}
+BAD_VALUE = {"age": "an age of {}", "height_cm": "a height of {} cm", "weight_kg": "a weight of {} kg", "weeks": "a timeline of {} weeks",
+             "days_per_week": "{} training days a week", "minutes_per_session": "{}-minute sessions"}
+BARE_FIELDS = ("age", "height_cm", "days_per_week", "minutes_per_session")  # a lone number can answer one of these; weight needs a unit
+BARE = re.compile(r"\s*(\d{1,3})\s*(?:years?(?: old)?|cm|days?(?: a week)?|times|x|min(?:ute)?s?)?\s*[.!]?\s*", re.IGNORECASE)
+# "chicken breast", "brown rice", "peanut butter": a modifier and its food stay one item when a pantry list has no commas
+FOOD_MODIFIERS = {"brown", "white", "greek", "sweet", "whole", "skim", "olive", "peanut", "bell", "green", "red", "ground", "cottage",
+                  "soy", "almond", "coconut", "sour", "cream", "baby", "cherry", "rolled", "frozen", "canned"}
+FOOD_HEADS = {"breast", "breasts", "thigh", "thighs", "wings", "sauce", "butter", "fillet", "fillets", "mince"}
+PANTRY_FILLER = {"some", "a", "an", "the", "in", "my", "of", "with", "few", "bit", "lots", "lot", "fridge", "freezer", "pantry", "got"}
 GREETING = ("Hi, I'm your Forma coach. I lead a small team of specialist agents: Intake, Medical, Trainer, Nutritionist "
             "and Chef. Everything we recommend comes from public health guidelines, FDA drug labels, USDA food data and "
             "peer-reviewed research, and every recommendation shows its source.\n\nTo start, tell me about your goal and "
@@ -131,30 +140,66 @@ def list_phrase(items: list[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+def split_foods(phrase: str) -> list[str]:
+    """"eggs bread milk bananas" -> four items; "chicken breast brown rice" -> two.
+    ponytail: a word-list heuristic; an unlisted two-word food ("mung beans") splits in two."""
+    words, out = phrase.split(), []
+    for w in words:
+        if out and (out[-1].split()[-1] in FOOD_MODIFIERS or w in FOOD_HEADS):
+            out[-1] += " " + w
+        else:
+            out.append(w)
+    return out
+
+
+def merge_medical(m: Medical, got: dict) -> None:
+    m.conditions = sorted(set(m.conditions) | set(got["conditions"]))
+    m.medications = sorted(set(m.medications) | set(got["medications"]))
+    m.unrecognized_medications = sorted(set(m.unrecognized_medications) | set(got.get("unrecognized", [])))
+    m.symptoms = sorted(set(m.symptoms) | set(got["symptoms"]))
+    if got.get("pregnant"):
+        m.pregnant = True
+
+
+def medical_found(m: Medical) -> list[str]:
+    return [*(x.replace("_", " ") for x in m.conditions), *m.medications, *m.symptoms]
+
+
 def build(kb: KB, llm: LLM):
     # ---- routing ---------------------------------------------------------------------------
     async def coach(state: State) -> dict:
         s, text = state["session"], state["text"].strip()
         s.messages.append({"id": uuid.uuid4().hex[:8], "role": "user", "agent": None, "text": text, "quick": [], "kind": "message"})
         low = text.lower()
+        named_drug = any(kb.resolve_drug(w) for w in re.findall(r"[a-z]{5,}", low))
+        health_news = bool(safety.detect_conditions(text) or safety.detect_symptoms(text))  # "I hurt my knee", "torn Achilles"
+        new_health = bool(set(safety.detect_conditions(text)) - set(s.medical.conditions)
+                          or set(safety.detect_symptoms(text)) - set(s.medical.symptoms))
+
+        def food_list() -> bool:  # "eggs, chicken breast, rice": most parts are foods
+            parts = [p for p in re.split(r",|\n|;|\band\b", low) if p.strip()]
+            return len(parts) >= 2 and sum(bool(kb.foods.match(p)[0]) for p in parts) * 2 >= len(parts)
         if s.stage == "intake":
             route = "intake"
-        elif s.stage == "medical":
-            route = "medical"
+        elif s.stage == "medical":  # a correction ("actually I'm 32") goes back to Intake; anything else is screening
+            correction = set(parse_profile(text)) & {*REQUIRED, "weeks", "target_change_kg"}  # not allergies: Medical takes those
+            route = "intake" if correction and not (named_drug or health_news or NO_WORDS.search(text)) else "medical"
         elif s.stage == "pantry":
-            route = "pantry"
+            route = "medical" if named_drug or health_news else "pantry"
         elif s.plan and (re.search(r"\b(swap|replace|instead of|don'?t like|hate|can'?t do)\b", low) or any(
                 e["name"].lower() == low for d in s.plan["template"] for e in d["exercises"])):
             route = "swap"
-        elif re.search(r"\b(fridge|pantry|i have|cook|recipe|meals?|ingredients|dinner|lunch|breakfast|snack|tomorrow)\b", low):
+        elif new_health:
+            route = "medical"  # a new injury or condition: screen it and rebuild the plan
+        elif re.search(r"\b(fridge|pantry|i have|cook|recipe|meals?|ingredients|dinner|lunch|breakfast|snack|tomorrow)\b", low) or food_list():
             route = "pantry"
-        elif any(kb.resolve_drug(w) for w in re.findall(r"[a-z]{5,}", low)):
+        elif named_drug:
             route = "medical"  # a medication by name: screen it
         elif re.search(r"\b(weigh|now \d|days a week|times a week|minutes|new plan|change my plan|update)\b", low):
             route = "intake"
         elif s.plan and low.endswith("?"):
             route = "answer"  # "is this safe with my medication?" asks about the plan; it doesn't change the history
-        elif re.search(r"\b(started|taking|prescribed|diagnosed|medication|pregnan|injur|surgery|doctor)\b", low):
+        elif re.search(r"\b(started|taking|prescribed|diagnosed|medication|pregnan\w*|doctor)\b", low):
             route = "medical"
         else:
             route = "answer"
@@ -163,34 +208,52 @@ def build(kb: KB, llm: LLM):
 
     # ---- intake -----------------------------------------------------------------------------
     async def intake(state: State) -> dict:
-        s = state["session"]
+        s, text = state["session"], state["text"]
         working("Intake", "Reading your goals and stats")
-        got = await understand_profile(llm, state["text"])
-        if s.profile.missing() == ["age"] and (m := re.fullmatch(r"\s*(\d{2})\s*[.!]?\s*", state["text"])):
-            got["age"] = int(m.group(1))  # a bare "25" answers the one question Intake asked
+        got = await understand_profile(llm, text)
+        numeric = [f for f in s.profile.missing() if f in BARE_FIELDS]
+        if not got and len(numeric) == 1 and (m := BARE.fullmatch(text)):
+            got[numeric[0]] = int(m.group(1))  # a bare "25" answers the one number Intake asked for
+        bad = []
+        for k in list(got):  # keep every value that makes sense; name the ones that don't
+            try:
+                Profile(**{k: got[k]})
+            except ValueError:
+                bad.append(BAD_VALUE.get(k, k.replace("_", " ") + " {}").format(got.pop(k)))
         merged = s.profile.model_dump()
         for k, v in got.items():
             if k in merged and v not in (None, [], ""):
                 merged[k] = v
-        try:
-            s.profile = Profile(**merged)
-        except ValueError as e:
-            await speak(s, "Intake", f"Some of those numbers look off ({str(e).splitlines()[0]}). Could you check them?")
-            return {"route": "wait"}
+        s.profile = Profile(**merged)
+        if s.stage == "intake":  # conditions or medications mentioned up front go straight to Medical's notes
+            merge_medical(s.medical, parse_medical(text, kb.resolve_drug))
         missing = s.profile.missing()
         done("Intake", f"Recorded {', '.join(sorted(got)) or 'nothing new'}", profile=s.profile.model_dump())
+        doubt = f"I left out {list_phrase(bad)}, since that doesn't look right. " if bad else ""
         if missing:
             quick = ["Lose fat", "Build muscle", "Train for a race", "Get generally fitter"] if "goal" in missing else []
             lead = "Thanks! To build your plan I still need" if got else "Sorry, I didn't catch that. I still need"
-            await speak(s, "Intake", f"{lead} {list_phrase([FIELD_PHRASES[m] for m in missing])}.", quick)
+            await speak(s, "Intake", f"{doubt}{lead} {list_phrase([FIELD_PHRASES[m] for m in missing])}.", quick)
             return {"route": "wait"}
         if s.stage == "intake":
             p = s.profile
             s.stage = "medical"
+            if doubt:
+                await speak(s, "Intake", doubt.strip())
             handoff("Intake", "Medical", f"Profile complete: {p.age}, {p.sex}, {p.height_cm:.0f} cm, {p.weight_kg:.0f} kg, "
                                          f"goal {p.goal.replace('_', ' ')}, {p.days_per_week} days a week. Please screen.")
-            await speak(s, "Medical", MEDICAL_ASK, ["None of these apply", "I have a condition or take medication"])
+            noted = medical_found(s.medical)
+            ask = (f"You mentioned {list_phrase(noted)}; I've noted that. Anything else?\n\n" if noted else "") + MEDICAL_ASK
+            await speak(s, "Medical", ask, ["None of these apply", "I have a condition or take medication"])
             return {"route": "wait"}
+        if s.stage in ("medical", "pantry"):  # a correction mid-way: confirm it, then carry on with the step we were on
+            changed = ", ".join(k.replace("_cm", "").replace("_kg", "").replace("_", " ") for k in sorted(got)) or "nothing"
+            await speak(s, "Intake", f"{doubt}Updated: {changed}.")
+            await speak(s, *(("Medical", "Now, any conditions, medications or injuries? Say \"none\" if nothing applies.")
+                             if s.stage == "medical" else ("Chef", "Now, what's in your fridge and pantry? Or say \"skip\".")))
+            return {"route": "wait"}
+        if doubt:
+            await speak(s, "Intake", doubt.strip())
         return {"route": "plan"}
 
     # ---- medical screening -------------------------------------------------------------------
@@ -204,19 +267,14 @@ def build(kb: KB, llm: LLM):
                                     or got.get("allergies")) and s.stage == "medical":
             await speak(s, "Medical", "Could you name the condition or medication? For example: \"type 2 diabetes, metformin\".")
             return {"route": "wait"}
-        m.conditions = sorted(set(m.conditions) | set(got["conditions"]))
-        m.medications = sorted(set(m.medications) | set(got["medications"]))
-        m.unrecognized_medications = sorted(set(m.unrecognized_medications) | set(got["unrecognized"]))
-        m.symptoms = sorted(set(m.symptoms) | set(got["symptoms"]))
-        if got["pregnant"]:
-            m.pregnant = True
+        merge_medical(m, got)
         m.screened = True
         emit("tool", agent="Medical", tool="FDA label lookup",
              detail=", ".join(m.medications) or "no medications", count=len(m.medications))
-        found = [*(x.replace("_", " ") for x in m.conditions), *m.medications, *m.symptoms,
-                 *(f"{a.replace('_', ' ')} allergy" for a in got.get("allergies", []))]
+        found = [*medical_found(m), *(f"{a.replace('_', ' ')} allergy" for a in got.get("allergies", []))]
         done("Medical", f"Screened: {', '.join(found) or 'nothing to flag'}", medical=m.model_dump())
-        if s.stage == "medical":
+        if s.stage in ("medical", "pantry"):  # from the pantry step: a late injury or medication, then the pantry again
+            first = s.stage == "medical"
             s.stage = "pantry"
             note = (f"Noted: {list_phrase(found)}. I'll set the safety limits for the team when we plan." if found
                     else "Nothing to flag. Thanks.")
@@ -225,7 +283,8 @@ def build(kb: KB, llm: LLM):
                          "pharmacist whether it affects exercise or diet.")
             await speak(s, "Medical", note)
             handoff("Medical", "Chef", "Screening done. Ask about the pantry.")
-            await speak(s, "Chef", PANTRY_ASK, ["Skip for now", "Use a sample pantry"])
+            await speak(s, "Chef", PANTRY_ASK if first else "Got it. Now, what's in your fridge and pantry? Or say \"skip\".",
+                        ["Skip for now", "Use a sample pantry"])
             return {"route": "wait"}
         return {"route": "plan"}
 
@@ -237,20 +296,27 @@ def build(kb: KB, llm: LLM):
         if "tomorrow" in low:
             s.today = planner.WEEKDAYS[(planner.WEEKDAYS.index(s.today) + 1) % 7]
         is_list = "," in low or "\n" in low or re.match(r"^(i have|i've got|we have|in my|my pantry|there'?s)", low) or s.stage == "pantry"
-        if "sample" in low:
-            items = SAMPLE_PANTRY
-        elif re.match(r"^(skip|no|none|nothing|later)\b", low):
-            items = []
+        skipped = bool(re.match(r"^(skip|no|none|nothing|later)\b", low))
+        if "sample" in low or skipped:
+            items = SAMPLE_PANTRY  # "skip" plans around common staples, as the question promised
         elif not is_list and s.pantry is not None:
             items = s.pantry  # a question about meals: keep the pantry, re-plan the meals
         else:
             body = re.sub(r"^(i have|i've got|we have|there'?s|in my (fridge|pantry)( is| are)?|my pantry has)\s*[:,-]?\s*", "", low)
             items = [i.strip(" .") for i in re.split(r",|\n|;|\band\b|\bplus\b", body) if 1 < len(i.strip(" .")) < 40]
-        s.pantry = items
+            if len(items) == 1:  # "eggs bread milk bananas": no commas
+                items = [w for w in split_foods(items[0]) if w not in PANTRY_FILLER]
         matched = [i for i in items if kb.foods.match(i)[0]]
         emit("tool", agent="Chef", tool="USDA FoodData Central", detail=f"matched {len(matched)} of {len(items)} items",
              count=len(matched))
-        done("Chef", f"{len(items)} pantry items" if items else "No pantry; using staples")
+        if not matched:
+            done("Chef", "No foods recognised")
+            await speak(s, "Chef", f"I couldn't find {list_phrase(items[:3] or [repr(text)])} in the USDA food data. Could you list "
+                                   "a few ingredients, like \"eggs, rice, spinach\"? Or say \"skip\" and I'll use common staples.",
+                        ["Skip for now", "Use a sample pantry"])
+            return {"route": "wait"}
+        s.pantry = items
+        done("Chef", "No pantry; using common staples" if skipped else f"{len(items)} pantry items")
         s.stage = "ready"
         return {"route": "plan" if s.plan is None else "meals"}
 
@@ -545,8 +611,9 @@ def fallback_summary(s: Session, f: dict) -> str:
             *f.get("easy_cardio_on_rest_days", [])]
     lines.append(f"Your week: {'; '.join(w for w in week if w)}. That's {f['aerobic_minutes_per_week']} aerobic minutes.")
     lines += f.get("sustainable_note", [])
-    lines.append(f"Today ({f['today']}) aim for about {f['today_calorie_target']} kcal and {f['today_protein_target_g']} g protein: "
-                 + ", ".join(f.get("meals_planned_for_today", [])) + ".")
+    meals = f.get("meals_planned_for_today", [])
+    lines.append(f"Today ({f['today']}) aim for about {f['today_calorie_target']} kcal and {f['today_protein_target_g']} g protein"
+                 + (": " + ", ".join(meals) if meals else "") + ".")
     lines += f.get("medical_notes", [])[:3]
     lines.append("Ask me anything about the plan.")
     return "\n\n".join(lines)

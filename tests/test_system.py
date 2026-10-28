@@ -63,6 +63,28 @@ def test_a_bare_number_answers_the_age_question(coach):
     assert s.profile.age == 25 and s.stage == "medical"
 
 
+PROFILE = "I'm 30, male, 180 cm, 80 kg, want to lose fat, 3 days a week, 45 minutes"
+
+
+def test_injuries_including_one_given_at_the_pantry_step(coach):
+    s = coach.new()
+    for text in [PROFILE, "I have a torn ACL and I haven't got a surgery for it yet.", "Injury : Torn Achilles"]:
+        converse(coach, s, text)
+    assert s.stage == "pantry" and not s.pantry  # the Achilles went to Medical, not into the pantry
+    converse(coach, s, "Skip for now")
+    assert {"knee-ligament-tear", "injury-clearance"} <= {n["rule_id"] for n in s.constraints.notes}
+    assert s.constraints.clearance == "required" and s.meals["totals"]["kcal"] > 1200  # "skip" cooks from common staples
+
+
+def test_an_unrecognised_pantry_is_asked_again(coach):
+    s = coach.new()
+    for text in [PROFILE, "none", "asdf qwerty"]:
+        converse(coach, s, text)
+    assert s.stage == "pantry" and s.plan is None
+    converse(coach, s, "eggs bread milk bananas")
+    assert len(s.pantry) == 4 and len(s.meals["meals"]) == 4 and s.meals["totals"]["kcal"] > 1200
+
+
 def test_chef_closes_protein_gaps_and_flags_medication_timing():
     kb = KB()
     p = Profile(sex="female", weight_kg=72)

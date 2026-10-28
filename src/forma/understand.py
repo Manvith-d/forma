@@ -24,59 +24,91 @@ ALLERGY_WORDS = {"dairy": ("dairy", "lactose", "milk"), "egg": ("egg",), "peanut
 NO_WORDS = re.compile(r"^\s*(no|nope|none|nothing|nah|n/a|not really|all good|i'?m healthy|healthy)\b", re.IGNORECASE)
 
 
-WORD_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
+UNITS = {w: i for i, w in enumerate(["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"])}
+TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+WEEKDAY = r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tues?|wed|thu(?:rs?)?|fri)s?\b"  # not "sat"/"sun"
+# "3 days a week", "3 days in a week", "3-4 times per week", "3x/week", "4 sessions weekly"
+FREQ = (r"\b([1-7])\s*(?:(?:-|to)\s*[1-7]\s*)?(?:\w+\s+)?(?:x|times|days|sessions|workouts)\s*"
+        r"(?:(?:a|per|each|every|/|in\s+a|in\s+the)?\s*(?:week|wk)\b|weekly)|\b(?:once|twice|thrice)\s+(?:a|per|in\s+a)\s+week\b")
 
 
 def _num(s: str) -> float:
     return float(s.replace(",", "."))
 
 
+def _digits(t: str) -> str:
+    """Number words to digits, so every rule below reads "twenty-five" and "five foot nine" like "25" and "5 foot 9"."""
+    t = re.sub(rf"\b({'|'.join(TENS)})(?:[\s-]+({'|'.join(list(UNITS)[1:10])}))?\b",
+               lambda m: str(TENS[m.group(1)] + UNITS.get(m.group(2) or "zero")), t)
+    return re.sub(rf"\b({'|'.join(UNITS)})\b", lambda m: str(UNITS[m.group(1)]), t)
+
+
 def parse_profile(text: str) -> dict:
-    t = text.lower()
+    t = _digits(text.lower())
     out: dict = {}
-    m = re.search(r"\b(\d{2})\s*(?:years?(?:\s*old)?|yrs?|yo|y/o)\b|\bage[d:]?\s*(?:is\s+|of\s+|=\s*)?(\d{2})\b|\b(?:i'?m|i am)\s+(?:a\s+)?(\d{2})(?:\s*[,.]|\s+(?:year|and|m\b|f\b|male|female|man|woman|guy|girl))"
-                  r"|\b(\d{2})\s?[mf]\b|\b(?:male|female|man|woman)\s*,\s*(\d{2})\b|(?:^|[.!]\s*)(\d{2})\s*,\s*(?:male|female|man|woman)\b", t)
+    m = re.search(r"(?<!for )(?<!in )(?<!over )(?<!past )(?<!last )\b(\d{2})\s*(?:years?(?:\s*(?:old|of age))?|yrs?|yo|y/o)\b"
+                  r"|\baged?\s*(?:is|of|:|=|-)?\s*(\d{2})\b"
+                  r"|\b(?:i'?m|i am)\s+(?:a\s+)?(\d{2})(?=\s*(?:[,.!]|$|and\b|[mf]\b|male|female|man\b|woman|guy|girl))"
+                  r"|\b(\d{2})\s*/?\s*[mf]\b|\b[mf]\s*[,/]\s*(\d{2})\b"
+                  r"|\b(?:male|female|man|woman)\s*,\s*(\d{2})\b|(?:^|[.!]\s*)(\d{2})\s*,\s*(?:male|female|man|woman)\b", t)
     if m:
         out["age"] = int(next(g for g in m.groups() if g))
-    if re.search(r"\b(female|woman|girl|she|her)\b|\b\d{2}\s?f\b", t):
+    age_span = m.span() if m else (0, 0)
+    if re.search(r"\b(female|woman|girl|lady)\b|\b\d{2}\s*/?\s*f\b|\bf\s*[,/]\s*\d{2}\b|\b(?:sex|gender)\s*(?:is|:|-)?\s*f\b", t):
         out["sex"] = "female"
-    elif re.search(r"\b(male|man|guy|he|him)\b|\b\d{2}\s?m\b", t):
+    elif re.search(r"\b(male|man|guy|boy)\b|\b\d{2}\s*/?\s*m\b|\bm\s*[,/]\s*\d{2}\b|\b(?:sex|gender)\s*(?:is|:|-)?\s*m\b", t):
         out["sex"] = "male"
-    if m := re.search(r"\b(\d)\s*(?:'|ft|feet|foot)\s*(\d{1,2})?\s*(?:\"|in|inches)?", t):
+    if (m := re.search(r"\b([4-7])[.,](\d{1,2})\s*(?:ft|feet|foot)\b", t)):  # "5.9 ft" means 5'9"; "5.75 ft" means 5¾ feet
+        frac = m.group(2)
+        inches = int(frac) if int(frac) < 12 else round(float("0." + frac) * 12)
+        out["height_cm"] = round((int(m.group(1)) * 12 + inches) * 2.54)
+    elif m := re.search(r"\b([4-7])\s*(?:'|’|ft(?![a-z])|feet|foot)\s*(\d{1,2})?", t):
         out["height_cm"] = round((int(m.group(1)) * 12 + int(m.group(2) or 0)) * 2.54)
-    elif m := re.search(r"\b(1[2-9]\d|2[0-2]\d)\s*cm\b", t):
+    elif m := re.search(r"\b(1[2-9]\d|2[0-2]\d)\s*(?:cm|centimet)", t):
         out["height_cm"] = int(m.group(1))
-    elif m := re.search(r"\b([12][.,]\d{2})\s*m\b", t):
+    elif m := re.search(r"\b([12][.,]\d{1,2})\s*m(?:eters?|etres?)?\b", t):
         out["height_cm"] = round(_num(m.group(1)) * 100)
-    for m in re.finditer(r"\b(\d{1,3}(?:[.,]\d)?)\s*(kg|kgs|kilos?|lbs?|pounds)\b", t):
-        kg = _num(m.group(1)) * (0.4536 if m.group(2).startswith(("lb", "pound")) else 1)
+    elif m := re.search(r"\bheight\s*(?:is|:|of|=|-)?\s*(1[2-9]\d|2[0-2]\d)\b", t):
+        out["height_cm"] = int(m.group(1))
+    for m in re.finditer(r"\b(\d{1,3}(?:[.,]\d)?)\s*(kg|kgs|kilos?|kilograms?|lbs?|pounds|stone)\b", t):
+        kg = _num(m.group(1)) * {"l": 0.4536, "p": 0.4536, "s": 6.35}.get(m.group(2)[0], 1)
         before = t[max(0, m.start() - 25):m.start()]
         if re.search(r"(lose|drop|shed|cut|gain|put on|add)\s*(?:about|around|like|roughly)?\s*$", before):
             out["target_change_kg"] = round(-kg if re.search(r"(lose|drop|shed|cut)", before) else kg, 1)
         elif 35 <= kg <= 300 and "weight_kg" not in out:
             out["weight_kg"] = round(kg, 1)
-    # A timeline, once frequencies ("3 days a week") and history ("lifting for two years") are out of the way
-    timeline = re.sub(r"\b\w+\s+(?:\w+\s+)?(?:x|times|days?|sessions?|workouts?)\s*(?:a|per|each|/)\s*(?:week|wk)\b|"
-                      r"\b(?:once|twice)\s+(?:a|per)\s+week\b|\bper week\b|\b(?:been|for the (?:past|last))\b[^.,]*", "", t)
-    if m := re.search(r"\b(\d{1,2}|a|one|two|three|six)\s*(weeks?|months?|years?)\b(?![\s-]*(?:old|ago))", timeline):
-        n = {"a": 1, "one": 1, "two": 2, "three": 3, "six": 6}.get(m.group(1)) or int(m.group(1))
+    # A timeline, once the age ("25 years"), frequencies ("3 days in a week") and history ("lifting for 2 years") are out of the way
+    timeline = t[:age_span[0]] + " " + t[age_span[1]:]
+    timeline = re.sub(FREQ + r"|\bper week\b|\b(?:been|for the (?:past|last))\b[^.,]*", "", timeline)
+    if m := re.search(r"\b(\d{1,2}|a)\s*(weeks?|months?|years?)\b(?![\s-]*(?:old|ago|of age))", timeline):
+        n = 1 if m.group(1) == "a" else int(m.group(1))
         out["weeks"] = round(n * {"w": 1, "m": 4.35, "y": 52}[m.group(2)[0]])
-    if m := re.search(r"\b([1-7]|one|two|three|four|five|six|seven)\s*(?:\w+\s+)?(?:x|times|days|sessions|workouts)\s*"
-                      r"(?:(?:a|per|each|/)?\s*(?:week|wk)\b|weekly)", t):
-        out["days_per_week"] = WORD_NUMBERS.get(m.group(1)) or int(m.group(1))
-    elif m := re.search(r"\b(once|twice)\s*(?:a|per)\s*week\b", t):
-        out["days_per_week"] = {"once": 1, "twice": 2}[m.group(1)]
+    if m := re.search(FREQ, t):
+        out["days_per_week"] = int(m.group(1)) if m.group(1) else {"o": 1, "tw": 2, "th": 3}[
+            next(k for k in ("o", "tw", "th") if m.group(0).startswith(k))]
+    elif len(days := {d[:3] for d in re.findall(WEEKDAY, t)}) >= 2:  # "Mon, Wed and Fri"
+        out["days_per_week"] = len(days)
+    elif re.search(r"\b(?:every )?weekdays?\b|\bmonday to friday\b", t):
+        out["days_per_week"] = 5
+    elif re.search(r"\bweekends?\b", t):
+        out["days_per_week"] = 2
     elif "every day" in t or "daily" in t:
         out["days_per_week"] = 6
-    if m := re.search(r"\b(\d{2,3})\s*(?:-|to)?\s*(?:\d{2,3}\s*)?(?:min|mins|minutes)\b", t):
+    if m := re.search(r"\b([1-3])\s*(?:hours?|hrs?)\s*(?:and\s*)?(\d{2})\s*(?:mins?|minutes?)\b", t):
+        out["minutes_per_session"] = int(m.group(1)) * 60 + int(m.group(2))
+    elif m := re.search(r"\b(\d{2,3})\s*(?:-|to)?\s*(?:\d{2,3}\s*)?(?:mins?|minutes?)\b", t):
         out["minutes_per_session"] = int(m.group(1))
-    elif re.search(r"\b(half an hour|30 ?min)", t):
+    elif re.search(r"\b(?:an?|1)\s*(?:hour|hr)s?\s*and\s*a\s*half\b|\b1[.,]5\s*(?:hours?|hrs?)\b", t):
+        out["minutes_per_session"] = 90
+    elif re.search(r"\bhalf an? hour\b|\bhalf hour\b", t):
         out["minutes_per_session"] = 30
-    elif m := re.search(r"\b(an|one|1|1\.5|two|2)\s*hours?\b", t):
-        out["minutes_per_session"] = {"an": 60, "one": 60, "1": 60, "1.5": 90, "two": 120, "2": 120}[m.group(1)]
-    if re.search(r"\b(lose|drop|shed|cut|slim|tone up|lean out)\b.*\b(weight|fat|kg|lbs?|pounds|belly)|\bweight loss\b|\bfat loss\b", t):
+    elif m := re.search(r"\b(an|1|2)[\s-]*(?:hours?|hrs?)\b", t):
+        out["minutes_per_session"] = 120 if m.group(1) == "2" else 60
+    if re.search(r"\b(lose|drop|shed|cut|slim|tone up|lean out)\b.*\b(weight|fat|kg|lbs?|pounds|belly)|\bweight loss\b|\bfat loss\b"
+                 r"|\b(get lean|leaner|lean out|tone up|get toned|slim down|shred)\b", t):
         out["goal"] = "lose_fat"
-    elif re.search(r"\b(build|gain|grow|bulk|put on)\b.*\b(muscle|mass|size|strength)|\bget (stronger|bigger|jacked)\b", t):
+    elif re.search(r"\b(build|gain|grow|bulk|put on)\b.*\b(muscle|mass|size|strength)|\bget (stronger|bigger|jacked)\b"
+                   r"|\bbulk(?:ing)?\b", t):
         out["goal"] = "build_muscle"
     elif re.search(r"\b(marathon|half marathon|5k|10k|endurance|stamina|triathlon|run faster)\b", t):
         out["goal"] = "endurance"
