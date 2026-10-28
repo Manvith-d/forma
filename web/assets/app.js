@@ -9,10 +9,11 @@ const AGENTS = {
 const EDGES = [["Coach", "Intake"], ["Coach", "Medical"], ["Coach", "Trainer"], ["Coach", "Nutritionist"], ["Coach", "Chef"],
   ["Intake", "Medical"], ["Medical", "Trainer"], ["Medical", "Nutritionist"], ["Medical", "Chef"], ["Trainer", "Nutritionist"],
   ["Nutritionist", "Chef"]];
+const GOTO = [["plan", "Your week"], ["nutrition", "Calories"], ["meals", "Today's meals"], ["safety", "Safety notes"]];  // under the summary
 const color = a => `var(--${a in AGENTS ? a : "Coach"})`;
 const initials = a => a === "Nutritionist" ? "Nu" : a[0];
 
-let session = null, ws = null, busy = false;
+let session = null, ws = null, busy = false, seen = {};
 const streaming = new Map();
 
 // ---- boot ----------------------------------------------------------------------------------
@@ -23,11 +24,16 @@ async function boot(fresh = false) {
   localStorage.setItem("forma-session", session.id);
   $("#messages").innerHTML = "";
   $("#timeline").innerHTML = "";
+  for (const el of [$("#messages"), $("#timeline")]) el.classList.add("replay");  // no entrance animations for history
   session.messages.forEach(m => addMessage(m));  // not forEach(addMessage): the index would arrive as "stream"
   (session.activity || []).forEach(ev => onEvent(ev, true));
+  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll(".replay").forEach(el => el.classList.remove("replay"))));
   showQuick(session.messages.at(-1));
   drawNetwork();
   renderBoard();
+  seen = signature();
+  selectTab(session.plan ? "plan" : "live");
+  setView("chat");
   connect();
   health();
   if (document.getElementById(`tab-${location.hash.slice(1)}`)) selectTab(location.hash.slice(1));  // #plan, #meals, ...
@@ -39,7 +45,7 @@ async function health() {
   const k = h.knowledge;
   $("#status").innerHTML = [
     `<span class="pill ${h.llm.available ? "on" : "off"}" title="Runs locally through Ollama">${h.llm.available ? `Local model: ${esc(h.llm.model)}` : h.demo ? "Public demo: rules-only, no LLM" : "Local model offline: rules-only mode"}</span>`,
-    `<span class="pill" title="Pipeline run ${esc(k.pipeline_run)}">${k.documents} documents · ${k.labels} FDA labels · ${k.foods.toLocaleString()} foods · ${k.exercises} exercises</span>`,
+    `<span class="pill kb" title="Pipeline run ${esc(k.pipeline_run)}">${k.documents} documents · ${k.labels} FDA labels · ${k.foods.toLocaleString()} foods · ${k.exercises} exercises</span>`,
     k.checks_passed ? `<span class="pill on">Data checks ${k.checks_passed.p}/${k.checks_passed.n}</span>` : "",
   ].join("");
   $("#demo-note").hidden = !h.demo;
@@ -105,12 +111,20 @@ function onEvent(ev, replay = false) {  // replay: rebuilding the log after a re
       showQuick(ev.message);
       break;
     }
-    case "state":
+    case "state": {
+      const hadPlan = !!session.plan;
       session = ev.session;
       renderBoard();
       setBusy(false);
+      const now = signature(), changed = Object.keys(now).filter(tab => now[tab] !== seen[tab]);
+      seen = now;
+      changed.forEach(tab => $(`.tabs [data-tab="${tab}"]`).classList.add("fresh"));
+      if (!hadPlan && session.plan) selectTab("plan");  // the plan just arrived: show it instead of the agent diagram
+      else selectTab($(".tabs [aria-selected=true]").dataset.tab);  // the tab you're on isn't new to you
+      if (changed.length && document.body.dataset.view !== "board") $("#view").classList.add("fresh");  // phones: something to see
       document.querySelectorAll("#network .node.done").forEach(n => setTimeout(() => n.classList.remove("done"), 2500));
       break;
+    }
     case "error":
       addMessage({ role: "agent", agent: "Coach", text: ev.text });
       setBusy(false);
@@ -138,7 +152,8 @@ function addMessage(m, stream = false) {
   li.innerHTML = m.role === "user"
     ? `<div class="bubble">${format(m.text)}</div>`
     : `<span class="avatar" style="background:${color(agent)}">${initials(agent)}</span>
-       <div class="bubble"><div class="who" style="color:${color(agent)}">${esc(agent)}</div><div class="body ${stream ? "caret" : ""}">${format(m.text)}</div></div>`;
+       <div class="bubble"><div class="who" style="color:${color(agent)}">${esc(agent)}</div><div class="body ${stream ? "caret" : ""}">${format(m.text)}</div>
+       ${m.kind === "summary" ? `<div class="goto">${GOTO.map(([tab, label]) => `<button type="button" data-goto="${tab}">${label}</button>`).join("")}</div>` : ""}</div>`;
   $("#messages").append(li);
   scrollChat();
   return $(".body", li);
@@ -199,7 +214,7 @@ function packet(from, to) {
 function log(agent, kind, html, raw = false, at = null) {
   const li = document.createElement("li");
   li.style.setProperty("--c", color(agent));
-  li.innerHTML = `<time>${new Date(at ? at * 1000 : Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+  li.innerHTML = `<time>${new Date(at ? at * 1000 : Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })}</time>
     <div><span class="kind">${esc(kind)}</span><b>${esc(agent)}</b> ${raw ? html : esc(html)}</div>`;
   const tl = $("#timeline");
   tl.prepend(li);
@@ -207,8 +222,15 @@ function log(agent, kind, html, raw = false, at = null) {
 }
 
 // ---- dashboard panels --------------------------------------------------------------------------
+// What each tab shows, so a tab that changed while you looked elsewhere gets a dot
+const signature = () => Object.fromEntries(Object.entries({
+  plan: session.plan, nutrition: session.targets, meals: session.meals,
+  safety: [session.medical, session.constraints?.notes], sources: session.citations.length,
+}).map(([k, v]) => [k, JSON.stringify(v ?? null)]));
+
 function renderBoard() {
   renderPlan(); renderNutrition(); renderMeals(); renderSafety(); renderSources();
+  $(".network-wrap").classList.toggle("compact", !!session.plan);
   const badge = (tab, on) => { const b = $(`.tabs [data-tab="${tab}"]`); b.querySelector(".badge")?.remove(); if (on) b.insertAdjacentHTML("beforeend", `<span class="badge">${on}</span>`); };
   badge("meals", session.meals?.meals.length || 0);
   badge("sources", session.citations.length || 0);
@@ -247,7 +269,7 @@ function renderPlan() {
     $("#day-detail").innerHTML = `<h3>${esc(d.day)} · ${esc(d.name)}</h3>
       ${d.warmup ? `<p class="how">Warm-up: ${esc(d.warmup)}</p>` : ""}
       ${d.exercises.length ? `<table><tr><th>Exercise</th><th>Sets × reps</th><th>Effort</th></tr>${d.exercises.map(e => `
-        <tr><td><b>${esc(e.name)}</b><p class="how">${esc((e.how || []).slice(0, 2).join(" "))}</p></td><td>${e.sets} × ${esc(e.reps)}</td><td>RPE ${esc(e.rpe)}</td></tr>`).join("")}</table>` : ""}
+        <tr><td><b>${esc(e.name)}</b>${e.how?.length ? `<details class="how"><summary>How to do it</summary>${e.how.slice(0, 3).map(s => `<p>${esc(s)}</p>`).join("")}</details>` : ""}</td><td>${e.sets} × ${esc(e.reps)}</td><td>RPE ${esc(e.rpe)}</td></tr>`).join("")}</table>` : ""}
       ${d.cardio ? `<p><b>${esc(d.cardio.modality)}</b>, ${d.cardio.minutes} min at RPE ${esc(d.cardio.rpe)}. <span class="how">${esc(d.cardio.how)}</span></p>` : ""}
       ${!d.exercises.length && !d.cardio ? empty("Rest day.") : ""}`;
   };
@@ -345,9 +367,12 @@ function renderSources() {
 document.addEventListener("click", e => {
   const tab = e.target.closest(".tabs button");
   if (tab) selectTab(tab.dataset.tab);
+  const go = e.target.closest("[data-goto]");
+  if (go) { selectTab(go.dataset.goto); setView("board"); }
   const cite = e.target.closest(".cite");
   if (cite) {
     selectTab("sources");
+    setView("board");
     const src = $(`#src-${cite.dataset.ref}`);
     if (src) { src.scrollIntoView({ block: "center", behavior: "smooth" }); src.classList.add("flash"); setTimeout(() => src.classList.remove("flash"), 1600); }
   }
@@ -355,11 +380,19 @@ document.addEventListener("click", e => {
 
 function selectTab(name) {
   document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === name));
+  $(`.tabs [data-tab="${name}"]`)?.classList.remove("fresh");
   document.querySelectorAll(".panel").forEach(p => p.hidden = p.id !== `tab-${name}`);
+}
+
+function setView(view) {  // narrow screens show the chat or the dashboard; wide screens show both
+  document.body.dataset.view = view;
+  $("#view").textContent = view === "board" ? "Chat" : "Dashboard";
+  if (view === "board") $("#view").classList.remove("fresh");
 }
 
 $("#composer").addEventListener("submit", e => { e.preventDefault(); const t = $("#input").value; $("#input").value = ""; send(t); });
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#composer").requestSubmit(); } });
 $("#input").addEventListener("input", e => { e.target.style.height = "auto"; e.target.style.height = Math.min(160, e.target.scrollHeight) + "px"; });
 $("#new").addEventListener("click", () => boot(true));
+$("#view").addEventListener("click", () => setView(document.body.dataset.view === "board" ? "chat" : "board"));
 boot();

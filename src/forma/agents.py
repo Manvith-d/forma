@@ -607,14 +607,21 @@ def fallback_summary(s: Session, f: dict) -> str:
     lines = []
     if f.get("clearance") == "required":
         lines.append("First: please see a clinician before starting. Until then the plan stays at light activity.")
-    week = [f"strength on {', '.join(f['strength_days'])}" if f.get("strength_days") else "", *f.get("cardio_days", []),
-            *f.get("easy_cardio_on_rest_days", [])]
+    sessions: dict[str, list[str]] = {}  # "Tue (Brisk walk, 38 min)", "Thu (...)" -> "Brisk walk, 38 min on Tue, Thu"
+    for d in [*f.get("cardio_days", []), *f.get("easy_cardio_on_rest_days", [])]:
+        day, _, what = d.partition(" (")
+        sessions.setdefault(what.rstrip(")"), []).append(day)
+    week = [f"strength on {', '.join(f['strength_days'])}" if f.get("strength_days") else "",
+            *(f"{what} on {', '.join(days)}" for what, days in sessions.items())]
     lines.append(f"Your week: {'; '.join(w for w in week if w)}. That's {f['aerobic_minutes_per_week']} aerobic minutes.")
     lines += f.get("sustainable_note", [])
     meals = f.get("meals_planned_for_today", [])
     lines.append(f"Today ({f['today']}) aim for about {f['today_calorie_target']} kcal and {f['today_protein_target_g']} g protein"
                  + (": " + ", ".join(meals) if meals else "") + ".")
-    lines += f.get("medical_notes", [])[:3]
+    notes = f.get("medical_notes", [])
+    lines += notes[:1]  # the rest live on the Safety tab; a wall of rules in the chat buries the plan
+    if len(notes) > 1:
+        lines.append(f"{len(notes) - 1} more safety note{'s' if len(notes) > 2 else ''} on the Safety tab.")
     lines.append("Ask me anything about the plan.")
     return "\n\n".join(lines)
 

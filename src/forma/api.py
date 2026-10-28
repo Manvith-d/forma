@@ -35,6 +35,14 @@ app = FastAPI(title="Forma", version="0.1.0", lifespan=lifespan,
               description="An evidence-based multi-agent fitness coach.")
 
 
+@app.middleware("http")
+async def revalidate(request, call_next):  # the page and its assets: browsers check for a newer deploy (a cheap 304)
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def coach_of(ws_or_app) -> Coach:
     return ws_or_app.state.coach
 

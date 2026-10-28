@@ -12,6 +12,7 @@
 <header class="top">
   <div class="brand"><span class="logo" aria-hidden="true">F</span><div><b>Forma</b><small>an evidence-based coach, run by a team of AI agents</small></div></div>
   <div class="status" id="status"></div>
+  <button class="ghost" id="view" type="button" aria-controls="board">Dashboard</button>
   <button class="ghost" id="new" type="button">New conversation</button>
 </header>
 <main class="layout">
@@ -22,11 +23,11 @@
     <p class="demo-note" id="demo-note" hidden>Public demo: please don't enter real health details. Conversations are not kept after the demo restarts.</p>
     <form class="composer" id="composer">
       <label class="sr" for="input">Message</label>
-      <textarea id="input" rows="1" placeholder="Tell your coach about your goal, your week and your body…" autocomplete="off"></textarea>
+      <textarea id="input" rows="1" placeholder="Message your coach…" autocomplete="off"></textarea>
       <button type="submit" id="send" aria-label="Send">Send</button>
     </form>
   </section>
-  <section class="board" aria-label="Dashboard">
+  <section class="board" id="board" aria-label="Dashboard">
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="live" aria-selected="true">Live</button>
       <button role="tab" data-tab="plan">Plan</button>
