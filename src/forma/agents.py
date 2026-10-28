@@ -166,6 +166,8 @@ def build(kb: KB, llm: LLM):
         s = state["session"]
         working("Intake", "Reading your goals and stats")
         got = await understand_profile(llm, state["text"])
+        if s.profile.missing() == ["age"] and (m := re.fullmatch(r"\s*(\d{2})\s*[.!]?\s*", state["text"])):
+            got["age"] = int(m.group(1))  # a bare "25" answers the one question Intake asked
         merged = s.profile.model_dump()
         for k, v in got.items():
             if k in merged and v not in (None, [], ""):
@@ -179,7 +181,8 @@ def build(kb: KB, llm: LLM):
         done("Intake", f"Recorded {', '.join(sorted(got)) or 'nothing new'}", profile=s.profile.model_dump())
         if missing:
             quick = ["Lose fat", "Build muscle", "Train for a race", "Get generally fitter"] if "goal" in missing else []
-            await speak(s, "Intake", f"Thanks! To build your plan I still need {list_phrase([FIELD_PHRASES[m] for m in missing])}.", quick)
+            lead = "Thanks! To build your plan I still need" if got else "Sorry, I didn't catch that. I still need"
+            await speak(s, "Intake", f"{lead} {list_phrase([FIELD_PHRASES[m] for m in missing])}.", quick)
             return {"route": "wait"}
         if s.stage == "intake":
             p = s.profile

@@ -34,7 +34,7 @@ def _num(s: str) -> float:
 def parse_profile(text: str) -> dict:
     t = text.lower()
     out: dict = {}
-    m = re.search(r"\b(\d{2})\s*(?:years?(?:\s*old)?|yrs?|yo|y/o)\b|\bage[d:]?\s*(\d{2})\b|\b(?:i'?m|i am)\s+(?:a\s+)?(\d{2})(?:\s*[,.]|\s+(?:year|and|m\b|f\b|male|female|man|woman|guy|girl))"
+    m = re.search(r"\b(\d{2})\s*(?:years?(?:\s*old)?|yrs?|yo|y/o)\b|\bage[d:]?\s*(?:is\s+|of\s+|=\s*)?(\d{2})\b|\b(?:i'?m|i am)\s+(?:a\s+)?(\d{2})(?:\s*[,.]|\s+(?:year|and|m\b|f\b|male|female|man|woman|guy|girl))"
                   r"|\b(\d{2})\s?[mf]\b|\b(?:male|female|man|woman)\s*,\s*(\d{2})\b|(?:^|[.!]\s*)(\d{2})\s*,\s*(?:male|female|man|woman)\b", t)
     if m:
         out["age"] = int(next(g for g in m.groups() if g))

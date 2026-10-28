@@ -55,6 +55,14 @@ def test_full_conversation(coach):
     assert s.messages[-1]["kind"] == "answer" and "grapefruit" in s.messages[-1]["text"]
 
 
+def test_a_bare_number_answers_the_age_question(coach):
+    s = coach.new()
+    converse(coach, s, "Male, 5'9, 79 kg. I want to build muscle, gym 4 days a week for an hour.")
+    assert s.profile.missing() == ["age"]
+    converse(coach, s, "25")
+    assert s.profile.age == 25 and s.stage == "medical"
+
+
 def test_chef_closes_protein_gaps_and_flags_medication_timing():
     kb = KB()
     p = Profile(sex="female", weight_kg=72)

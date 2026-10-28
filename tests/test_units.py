@@ -24,6 +24,7 @@ from forma.understand import parse_medical, parse_profile
     ("Female, 42, lose ~10 lbs over 12 weeks, 3 times weekly", {"age": 42, "weeks": 12, "days_per_week": 3}),
     ("38, female, half marathon in 16 weeks", {"age": 38, "goal": "endurance", "weeks": 16}),
     ("I want to stay fit, I'm lactose intolerant", {"goal": "general_fitness", "allergies": ["dairy"]}),
+    ("Age is 25, Sex is male and weight is 79 kgs. Height is 5'9 in feet", {"age": 25, "sex": "male", "weight_kg": 79.0, "height_cm": 175}),
 ])
 def test_parse_profile(text, expected):
     got = parse_profile(text)
